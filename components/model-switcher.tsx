@@ -5,27 +5,38 @@ import * as THREE from 'three'
 import { NextjsModel } from './nextjs-model'
 import { ReactModel } from './react-model'
 import { TailwindModel } from './tailwind-model'
+import { ResumeIframe } from './resume-iframe'
 
-type ModelType = 'nextjs' | 'react' | 'tailwind'
+type ModelType = 'nextjs' | 'react' | 'tailwind' | 'resume'
 
 interface ModelSwitcherProps {
     onModelChange?: (model: ModelType) => void
+    currentModel?: ModelType
 }
 
-export function ModelSwitcher({ onModelChange }: ModelSwitcherProps) {
-    const [currentModel, setCurrentModel] = useState<ModelType>('nextjs')
+export function ModelSwitcher({ onModelChange, currentModel = 'nextjs' }: ModelSwitcherProps) {
+    const [localModel, setLocalModel] = useState<ModelType>(currentModel)
     const [hovered, setHovered] = useState(false)
     const [isTransitioning, setIsTransitioning] = useState(false)
     const groupRef = useRef<THREE.Group>(null)
 
-    // Animation for rotation and floating
+    // Update local model when currentModel prop changes
+    useEffect(() => {
+        setLocalModel(currentModel)
+    }, [currentModel])
+
+    // Animation for rotation and floating (but not for resume)
     useFrame((state, delta) => {
-        if (groupRef.current) {
+        if (groupRef.current && localModel !== 'resume') {
             // Continuous slow rotation
             groupRef.current.rotation.y += delta * 0.2
 
             // Floating animation
             groupRef.current.position.y = Math.sin(state.clock.elapsedTime) * 0.3
+        } else if (groupRef.current && localModel === 'resume') {
+            // Keep resume completely stationary and centered
+            groupRef.current.position.set(0, 0, 0)
+            groupRef.current.rotation.set(0, 0, 0)
         }
     })
 
@@ -35,31 +46,31 @@ export function ModelSwitcher({ onModelChange }: ModelSwitcherProps) {
         config: { mass: 1, tension: 280, friction: 60 }
     })
 
-    // Spring animation for model switching with fade transition
-    const { opacity } = useSpring({
-        opacity: isTransitioning ? 0 : 1,
-        config: { mass: 1, tension: 280, friction: 60 },
-        onRest: () => {
-            if (isTransitioning) {
+    // Handle transition completion
+    useEffect(() => {
+        if (isTransitioning) {
+            const timer = setTimeout(() => {
                 setIsTransitioning(false)
-            }
+            }, 300)
+            return () => clearTimeout(timer)
         }
-    })
+    }, [isTransitioning])
 
     const handleClick = () => {
         if (isTransitioning) return // Prevent multiple clicks during transition
+        if (localModel === 'resume') return // Don't cycle when showing resume
 
         setIsTransitioning(true)
 
-        // Cycle through models
+        // Cycle through models (excluding resume for auto-cycling)
         const models: ModelType[] = ['nextjs', 'react', 'tailwind']
-        const currentIndex = models.indexOf(currentModel)
+        const currentIndex = models.indexOf(localModel)
         const nextIndex = (currentIndex + 1) % models.length
         const nextModel = models[nextIndex]
 
         // Delay the model change to allow fade out
         setTimeout(() => {
-            setCurrentModel(nextModel)
+            setLocalModel(nextModel)
             onModelChange?.(nextModel)
             console.log('Model switched to:', nextModel)
         }, 150) // Half of the transition duration
@@ -83,25 +94,23 @@ export function ModelSwitcher({ onModelChange }: ModelSwitcherProps) {
             onPointerOut: handlePointerOut,
         }
 
-        switch (currentModel) {
+        switch (localModel) {
             case 'nextjs':
                 return <NextjsModel {...modelProps} />
             case 'react':
                 return <ReactModel {...modelProps} />
             case 'tailwind':
                 return <TailwindModel {...modelProps} />
+            case 'resume':
+                return <ResumeIframe {...modelProps} />
             default:
                 return <NextjsModel {...modelProps} />
         }
     }
 
     return (
-        <animated.group
-            ref={groupRef}
-            dispose={null}
-            style={{ opacity }}
-        >
+        <group ref={groupRef} dispose={null}>
             {renderModel()}
-        </animated.group>
+        </group>
     )
 } 
